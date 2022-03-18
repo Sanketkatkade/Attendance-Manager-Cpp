@@ -1,78 +1,197 @@
 #include <iostream>
 #include <vector>
 #include <string>
+#include <fstream>
+#include <sstream>
+#include <algorithm>
+#include <iomanip>
+#include <ctime>
+#include <map>
+
 using namespace std;
 
-// Function to mark attendance for a student
-void markAttendance(vector<int>& rollNumbers, vector<string>& names, vector<bool>& attendance) {
-    int roll;
-    cout << "Enter the roll number of the student: ";
-    cin >> roll;
+class Student {
+public:
+    string name;
+    int rollNumber;
+    map<string, char> attendance;
 
-    bool found = false;
-    for (size_t i = 0; i < rollNumbers.size(); ++i) {
-        if (rollNumbers[i] == roll) {
-            found = true;
-            cout << "Enter 'P' for Present or 'A' for Absent: ";
-            char choice;
-            cin >> choice;
-            if (choice == 'P' || choice == 'p') {
-                attendance[i] = true;
-                cout << "Attendance marked for " << names[i] << endl;
-            } else if (choice == 'A' || choice == 'a') {
-                attendance[i] = false;
-                cout << "Attendance marked (Absent) for " << names[i] << endl;
-            } else {
-                cout << "Invalid choice. Attendance not marked." << endl;
-            }
+    Student(string name, int rollNumber) {
+        this->name = name;
+        this->rollNumber = rollNumber;
+    }
+};
+
+class AttendanceSystem {
+private:
+    vector<Student> students;
+
+public:
+    void addStudent() {
+        string name;
+        int rollNumber;
+        cout << "Enter student name: ";
+        cin.ignore();
+        getline(cin, name);
+        cout << "Enter student roll number: ";
+        cin >> rollNumber;
+
+        students.push_back(Student(name, rollNumber));
+        cout << "Student added successfully!" << endl;
+
+        // Save all student info to a CSV file
+        saveToCSV("student_info.csv");
+    }
+
+    void markAttendance() {
+        int rollNumber;
+        cout << "Enter student roll number to mark attendance: ";
+        cin >> rollNumber;
+
+        auto it = find_if(students.begin(), students.end(),
+            [rollNumber](const Student& student) {
+                return student.rollNumber == rollNumber;
+            });
+
+        if (it != students.end()) {
+            char status;
+            cout << "Enter attendance status (P for present, A for absent): ";
+            cin >> status;
+
+            time_t now = time(0);
+            tm* date = localtime(&now);
+            char dateStr[11];
+            strftime(dateStr, sizeof(dateStr), "%Y-%m-%d", date);
+
+            // Store attendance date-wise
+            it->attendance[dateStr] = status;
+            cout << "Attendance marked for roll number " << rollNumber << endl;
+
+            saveToCSV("student_info.csv");
+        } else {
+            cout << "Student not found!" << endl;
         }
     }
 
-    if (!found) {
-        cout << "Student with roll number " << roll << " not found." << endl;
-    }
-}
+    void saveToCSV(const string& filename) {
+        ofstream outFile(filename);
 
-// Function to display attendance report
-void displayAttendanceReport(const vector<int>& rollNumbers, const vector<string>& names, const vector<bool>& attendance) {
-    cout << "Attendance Report:" << endl;
-    for (size_t i = 0; i < rollNumbers.size(); ++i) {
-        cout << "Roll Number: " << rollNumbers[i]
-                  << ", Name: " << names[i]
-                  << ", Attendance: " << (attendance[i] ? "Present" : "Absent")
-                  << endl;
+        if (outFile.is_open()) {
+            outFile << "Roll Number,Name";
+
+            // Write the date headers
+            vector<string> dates;
+            for (const Student& student : students) {
+                for (const auto& entry : student.attendance) {
+                    dates.push_back(entry.first);
+                }
+            }
+            sort(dates.begin(), dates.end());
+            dates.erase(unique(dates.begin(), dates.end()), dates.end());
+
+            for (const string& date : dates) {
+                outFile << "," << date;
+            }
+
+            outFile << endl;
+
+            for (const Student& student : students) {
+                outFile << student.rollNumber << "," << student.name;
+
+                for (const string& date : dates) {
+                    if (student.attendance.find(date) != student.attendance.end()) {
+                        outFile << "," << student.attendance.find(date)->second;
+                    } else {
+                        outFile << ",";
+                    }
+                }
+
+                outFile << endl;
+            }
+
+            outFile.close();
+        } else {
+            cout << "Unable to open the file for writing." << endl;
+        }
     }
-}
+
+    void displayAttendanceReport() {
+        ifstream inFile("student_info.csv");
+        if (!inFile.is_open()) {
+            cout << "Unable to open the student_info.csv file." << endl;
+            return;
+        }
+
+        cout << "Attendance Report:" << endl;
+        cout << "---------------------------------------" << endl;
+
+        string line;
+        getline(inFile, line);
+
+        cout << setw(12) << left << "Roll Number" << setw(12) << left << "Name";
+
+        stringstream headerStream(line);
+        string cell;
+        while (getline(headerStream, cell, ',')) {
+            if (cell != "Roll Number" && cell != "Name") {
+                cout << setw(6) << cell;
+            }
+        }
+
+        cout << endl;
+
+        while (getline(inFile, line)) {
+            istringstream iss(line);
+            string roll, name, attendance;
+            getline(iss, roll, ',');
+            getline(iss, name, ',');
+
+            cout << setw(12) << left << roll << setw(12) << left << name;
+
+            while (getline(iss, attendance, ',')) {
+                if (attendance != "Roll Number" && attendance != "Name") {
+                    cout << setw(6) << attendance;
+                }
+            }
+
+            cout << endl;
+        }
+
+        inFile.close();
+    }
+};
 
 int main() {
-    vector<int> rollNumbers = {101, 102, 103};
-    vector<string> names = {"Alice", "Bob", "Charlie"};
-    vector<bool> attendance(rollNumbers.size(), false);
+    AttendanceSystem system;
 
     int choice;
-    do {
-        cout << "\nStudent Attendance Management System\n";
-        cout << "1. Mark Attendance\n";
-        cout << "2. Display Attendance Report\n";
-        cout << "3. Exit\n";
+
+    while (true) {
+        cout << "\nAttendance Management System" << endl;
+        cout << "1. Add Student" << endl;
+        cout << "2. Mark Attendance" << endl;
+        cout << "3. Display Attendance Report" << endl;
+        cout << "4. Exit" << endl;
         cout << "Enter your choice: ";
         cin >> choice;
 
         switch (choice) {
             case 1:
-                markAttendance(rollNumbers, names, attendance);
+                system.addStudent();
                 break;
             case 2:
-                displayAttendanceReport(rollNumbers, names, attendance);
+                system.markAttendance();
                 break;
             case 3:
-                cout << "Exiting the program.\n";
+                system.displayAttendanceReport();
                 break;
+            case 4:
+                cout << "Exiting the program." << endl;
+                return 0;
             default:
-                cout << "Invalid choice. Please try again.\n";
-                break;
+                cout << "Invalid choice. Please try again." << endl;
         }
-    } while (choice != 3);
+    }
 
     return 0;
 }
